@@ -1,0 +1,52 @@
+# ─── Rust ────────────────────────────────────────────────────────────────────
+/target
+**/*.rs.bk
+*.pdb
+
+# Cargo.lock EST committé : ntz est une application, pas une bibliothèque.
+# Ne pas l'ajouter ici.
+
+# ─── Front ───────────────────────────────────────────────────────────────────
+/web/node_modules
+/web/dist
+/web/.vite
+/web/coverage
+npm-debug.log*
+yarn-error.log*
+
+# Types générés depuis l'OpenAPI : ILS SONT COMMITTÉS (D19), et la CI échoue si
+# les régénérer produit un diff. Ne pas ignorer /web/src/types/generated.
+
+# ─── Secrets et configuration locale ─────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+/secrets/
+
+# ─── Artefacts d'exécution ───────────────────────────────────────────────────
+/artifacts
+/spill
+*.log
+
+# ─── IDE ─────────────────────────────────────────────────────────────────────
+/.idea
+/.vscode
+*.iml
+*.iws
+
+# Claude Code : les réglages personnels sont ignorés, les réglages partagés du
+# projet (.claude/settings.json, .claude/skills/) sont versionnés.
+# Explicite ici plutôt que de dépendre du gitignore global de chaque poste.
+/.claude/settings.local.json
+/.claude/*.local.json
+
+# ─── Windows / OS ────────────────────────────────────────────────────────────
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store

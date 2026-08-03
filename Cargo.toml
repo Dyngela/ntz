@@ -1,0 +1,47 @@
+[workspace]
+resolver = "3"
+members = ["services/*", "xtask"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.93"
+authors = ["Groupe Kroely"]
+publish = false
+
+# ─── Règles de code appliquées par le compilateur ────────────────────────────
+# Ce ne sont pas des conventions écrites dans CLAUDE.md en espérant qu'on s'en
+# souvienne : ce sont des erreurs de compilation.
+[workspace.lints.rust]
+unsafe_code = "deny"          # levé uniquement dans ntz-runtime (FFI Windows)
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"         # la sortie passe par tracing, pas par println!
+todo = "warn"
+
+[workspace.dependencies]
+# ─── Crates internes ────────────────────────────────────────────────────────
+ntz-domain = { path = "services/ntz-domain" }
+ntz-ports = { path = "services/ntz-ports" }
+ntz-engine = { path = "services/ntz-engine" }
+ntz-sql = { path = "services/ntz-sql" }
+ntz-store = { path = "services/ntz-store" }
+ntz-runtime = { path = "services/ntz-runtime" }
+ntz-notify = { path = "services/ntz-notify" }
+ntz-build = { path = "services/ntz-build" }
+ntz-api = { path = "services/ntz-api" }
+
+# ─── Crates externes ────────────────────────────────────────────────────────
+# Ajoutées au fil des étapes avec `cargo add -p <crate> <dep>`, pour que les
+# versions soient résolues et non recopiées à la main.
+#
+# Volontairement absentes pour l'instant : déclarer `datafusion` dans un
+# ntz-engine encore vide ferait compiler DataFusion à chaque build de l'étape 1.
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

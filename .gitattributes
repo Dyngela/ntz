@@ -1,0 +1,24 @@
+# Le dépôt stocke des LF, et la copie de travail aussi. Cohérent avec
+# .editorconfig, et surtout indépendant du `core.autocrlf` de chaque machine —
+# sinon `cargo fmt --check` et les diffs divergent d'un poste à l'autre.
+* text=auto eol=lf
+
+# Scripts Windows : doivent rester en CRLF pour être exécutables par cmd.exe
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binaires : aucune conversion
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.pdf binary
+*.xlsx binary
+*.exe binary
+*.dll binary
+
+# Fichiers générés : versionnés, mais repliés dans les revues GitHub
+Cargo.lock linguist-generated=true
+web/package-lock.json linguist-generated=true
+web/src/types/generated/** linguist-generated=true

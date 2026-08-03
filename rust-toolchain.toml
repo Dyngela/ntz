@@ -1,0 +1,6 @@
+[toolchain]
+# Version épinglée : ntz est une application déployée, la reproductibilité du
+# build primait sur le suivi automatique de stable. À monter volontairement.
+channel = "1.93.1"
+components = ["rustfmt", "clippy"]
+targets = ["x86_64-pc-windows-msvc"]

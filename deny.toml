@@ -1,0 +1,66 @@
+[graph]
+targets = ["x86_64-pc-windows-msvc"]
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+# Permissives uniquement. Une GPL/AGPL qui entre ici finirait dans un binaire
+# livré chez un client : c'est précisément ce que ce fichier existe pour attraper.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+]
+
+[bans]
+multiple-versions = "warn"
+
+# ─── La règle d'architecture de doc/traits.md §1, rendue exécutable ──────────
+# `wrappers` liste les seuls crates autorisés à dépendre directement du crate
+# banni. Toute autre dépendance fait échouer `cargo deny check`.
+#
+# C'est ce qui empêche `ntz-domain` ou `ntz-ports` d'importer une implémentation :
+# la couture n'est réelle que si elle est vérifiée par un outil.
+#
+# Ces entrées sont inertes tant que la dépendance n'est pas au graphe, et
+# actives dès qu'elle y entre.
+
+[[bans.deny]]
+name = "datafusion"
+wrappers = ["ntz-engine"]
+
+[[bans.deny]]
+name = "sqlx"
+wrappers = ["ntz-sql", "ntz-store"]
+
+[[bans.deny]]
+name = "arrow-odbc"
+wrappers = ["ntz-sql"]
+
+[[bans.deny]]
+name = "odbc-api"
+wrappers = ["ntz-sql", "arrow-odbc"]
+
+[[bans.deny]]
+name = "axum"
+wrappers = ["ntz-api"]
+
+[[bans.deny]]
+name = "tiberius"
+# Aucun wrapper : interdit partout. Sans release depuis juillet 2024, remplacé
+# par arrow-odbc (D12). Cette ligne évite qu'il revienne par inadvertance.
+wrappers = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
