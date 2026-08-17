@@ -1,0 +1,10 @@
+[toolchain]
+# Version épinglée : ntz est une application déployée, la reproductibilité du
+# build primait sur le suivi automatique de stable. À monter volontairement.
+#
+# 2026-08-03 : 1.93.1 → 1.97.1. Motif : sqlx 0.9 exige rustc >= 1.94, et
+# dependances.md §3.1 désigne 0.9 comme la version cible. 1.97.1 est la stable
+# du jour ; rustup l'installe seul à la première commande cargo.
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]
+targets = ["x86_64-pc-windows-msvc"]
