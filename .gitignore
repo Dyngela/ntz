@@ -3,6 +3,9 @@ ntz/target
 **/*.rs.bk
 *.pdb
 
+# ─── Outillage local (téléchargé, pas installé) ──────────────────────────────
+/.tools
+
 # Cargo.lock EST committé : ntz est une application, pas une bibliothèque.
 # Ne pas l'ajouter ici.
 
@@ -31,6 +34,10 @@ yarn-error.log*
 /artifacts
 /spill
 *.log
+ntz/*.db
+ntz/*.db-journal
+ntz/*.db-wal
+ntz/*.db-shm
 
 # ─── IDE ─────────────────────────────────────────────────────────────────────
 /.idea

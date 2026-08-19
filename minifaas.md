@@ -84,14 +84,16 @@ Trois tables. Le schéma est volontairement minimal — tu l'enrichiras.
 ```sql
 -- Une fonction = du code + le langage + l'artefact compilé
 CREATE TABLE functions (
-    id           TEXT PRIMARY KEY,        -- uuid
-    name         TEXT NOT NULL,
-    language     TEXT NOT NULL,           -- 'go' | 'python' (plus tard)
-    source       TEXT NOT NULL,           -- code source brut
-    wasm_path    TEXT,                    -- chemin de l'artefact .wasm compilé (NULL tant que pas buildé)
-    version      INTEGER NOT NULL DEFAULT 1,
-    created_at   TEXT NOT NULL,
-    updated_at   TEXT NOT NULL
+    id                    TEXT PRIMARY KEY,        -- uuid
+    name                  TEXT NOT NULL,
+    language              TEXT NOT NULL,           -- 'go' | 'python' (plus tard)
+    source                TEXT NOT NULL,           -- code source brut
+    wasm_path             TEXT,                    -- chemin du .wasm de la version courante (NULL tant que pas buildé)
+    version               INTEGER NOT NULL DEFAULT 1,
+    max_retries           INTEGER NOT NULL DEFAULT 0,
+    retry_backoff_seconds INTEGER NOT NULL DEFAULT 0,
+    created_at            TEXT NOT NULL,
+    updated_at            TEXT NOT NULL
 );
 
 -- Un déclencheur relie une fonction à une source d'événement
@@ -109,24 +111,45 @@ CREATE TABLE triggers (
 
 -- Un run = une exécution concrète, avec sa déduplication
 CREATE TABLE runs (
-    id             TEXT PRIMARY KEY,
-    function_id    TEXT NOT NULL,
-    trigger_id     TEXT,
-    scheduled_for  TEXT NOT NULL,         -- créneau visé (pour cron) ou instant de l'appel
-    status         TEXT NOT NULL,         -- 'pending' | 'running' | 'success' | 'failed' | 'timeout'
-    started_at     TEXT,
-    finished_at    TEXT,
-    stdout         TEXT,
-    stderr         TEXT,
-    error          TEXT,
-    leased_until   TEXT,                  -- pour détecter les runs abandonnés après crash
-    UNIQUE(function_id, scheduled_for)    -- ← empêche le double déclenchement d'un même créneau
+    id                TEXT PRIMARY KEY,
+    function_id       TEXT NOT NULL REFERENCES functions(id),
+    function_version  INTEGER NOT NULL,     -- version réellement exécutée (audit/rollback)
+    trigger_id        TEXT REFERENCES triggers(id),  -- NULL pour un appel API ad-hoc
+    scheduled_for     TEXT NOT NULL,        -- créneau visé (pour cron) ou instant de l'appel
+    status            TEXT NOT NULL,        -- 'pending' | 'running' | 'success' | 'failed' | 'timeout'
+    attempt           INTEGER NOT NULL DEFAULT 1,  -- incrémenté sur retry (voir note ci-dessous)
+    started_at        TEXT,
+    finished_at       TEXT,
+    stdout            TEXT,
+    stderr            TEXT,
+    error             TEXT,
+    leased_until      TEXT,                 -- pour détecter les runs abandonnés après crash
+    UNIQUE(function_id, scheduled_for)      -- ← empêche le double déclenchement d'un même créneau
 );
 ```
 
 La contrainte `UNIQUE(function_id, scheduled_for)` est la pièce maîtresse de
 l'idempotence : c'est elle qui garantit qu'un créneau cron ne s'exécute qu'une
 fois, même après un redémarrage. Voir §8.
+
+**Retry — mise à jour en place, pas de nouvelle ligne.** La contrainte UNIQUE
+interdit d'insérer une deuxième ligne pour le même `scheduled_for`, donc un
+retry n'est **pas** un nouveau `run` : c'est un `UPDATE` de la ligne existante
+(`status='pending'`, `attempt += 1`, `leased_until=NULL`), tant que
+`attempt <= functions.max_retries`. Le scheduler (et le dispatcher pour les
+appels API/webhook) doivent appliquer cette règle avant de déclarer un run
+définitivement `failed`. C'est une décision volontaire : on perd l'historique
+stdout/stderr des tentatives intermédiaires (seule la dernière tentative est
+gardée) en échange de rester à 3 tables. Si l'historique par tentative devient
+important, ce sera le signal pour extraire une table `attempts` — pas avant.
+
+**Versioning de l'artefact.** `functions.wasm_path` pointe vers la version
+*courante* seulement — un rebuild ne doit **pas** écraser le fichier
+précédent : nomme les artefacts en incluant la version (ex.
+`{function_id}-v{version}.wasm`) et conserve les anciens fichiers sur disque.
+`runs.function_version` enregistre quelle version a réellement tourné, ce qui
+rend l'historique traçable et un rollback possible (repointer `wasm_path` vers
+un fichier de version antérieure toujours présent).
 
 ---
 
@@ -316,7 +339,8 @@ boucle toutes les 30 s :
     dus = SELECT * FROM triggers
           WHERE kind='schedule' AND enabled=1 AND next_run_at <= now
 
-    pour chaque trigger dû :
+    pour chaque trigger dû, SPAWNÉ COMME TÂCHE TOKIO INDÉPENDANTE
+    (bornée par un sémaphore max_concurrent_runs — voir note ci-dessous) :
         # 1. réserver le créneau (idempotence)
         essayer INSERT INTO runs(function_id, scheduled_for=next_run_at, status='running', leased_until=now+Xmin)
         si l'insert échoue (UNIQUE violé) : quelqu'un l'a déjà pris → passer
@@ -324,11 +348,25 @@ boucle toutes les 30 s :
         # 2. exécuter
         outcome = dispatcher.run(...)
 
-        # 3. enregistrer + planifier le prochain créneau
-        UPDATE runs   SET status=..., stdout=..., finished_at=now
+        # 3. échec + retry possible ?
+        si outcome.failed et attempt <= functions.max_retries :
+            UPDATE runs SET status='pending', attempt=attempt+1, leased_until=NULL
+            → re-sera repris au prochain tour (ou après retry_backoff_seconds)
+        sinon :
+            UPDATE runs SET status=..., stdout=..., finished_at=now
+
+        # 4. planifier le prochain créneau (indépendant du succès/échec du run courant)
         prochain = cron.next_after(now)      # crate croner
         UPDATE triggers SET last_run_at=now, next_run_at=prochain
 ```
+
+**Concurrence de la boucle.** Ne fais jamais l'erreur d'appeler
+`dispatcher.run(...)` en séquentiel dans la boucle de réconciliation : un job
+qui tourne longtemps retarderait tous les autres jobs dus au même tick, ce qui
+est une faute de conception pour un scheduler (pas juste un problème de perf).
+Spawn chaque trigger dû comme tâche indépendante, borné par un sémaphore
+(`max_concurrent_runs`, dans `config.rs`) — `leased_until` reste le filet de
+sécurité en cas de crash, le sémaphore gère la charge en fonctionnement normal.
 
 Points de vigilance :
 
@@ -398,6 +436,15 @@ Ne saute pas d'étape.
 - [ ] **M7 — Avancé (optionnel).** Pooling d'instances, runtime Python
   (interpréteur embarqué), Component Model / WIT.
 
+- [ ] **M8 — UI éditeur + LSP (optionnel, hors périmètre v1).** Éditeur de code
+  dans l'UI avec coloration syntaxique (ex. grammaire tree-sitter compilée en
+  WASM pour Monaco) **sans** gopls dans un premier temps. Un vrai LSP Go a
+  besoin d'un workspace Go complet sur disque (go.mod, module cache, accès
+  éventuel à un proxy de modules) — pas d'une simple colonne `source TEXT` — et
+  n'apprend quasi rien sur Rust. Ne l'attaque qu'une fois M0–M6 acquis, et
+  traite-le explicitement comme un side-project TypeScript/LSP, pas comme la
+  suite naturelle du plan de contrôle Rust.
+
 Conseil : arrête-toi mentalement après **M3** pour un premier « ça marche pour de
 vrai », après **M6** pour un projet dont tu es fier.
 
@@ -409,7 +456,11 @@ vrai », après **M6** pour un projet dont tu es fier.
 
 - `axum` + `tokio` — serveur HTTP async.
 - `serde` / `serde_json` — (dé)sérialisation.
-- `sqlx` (SQLite) — store (alternative : `redb`, pur Rust).
+- `rusqlite` (SQLite, synchrone) — store, appelé via `tokio::task::spawn_blocking`
+  depuis les handlers async. Préféré à `sqlx` : pas de macros de vérification de
+  requête à l'exécution/compilation, pas de pool de connexions à gérer pour un
+  process mono-écrivain — et ça t'oblige à expliciter la frontière sync/async au
+  lieu de la laisser masquée par un framework (alternative pur Rust : `redb`).
 - `wasmtime` + `wasmtime-wasi` — runtime WASM et contexte WASI.
 - `croner` — parsing cron et calcul du prochain créneau.
 - `thiserror` (erreurs de bibliothèque) / `anyhow` (erreurs d'application).
@@ -442,6 +493,28 @@ vrai », après **M6** pour un projet dont tu es fier.
 - **Python plus tard** : ce n'est pas « compiler la fonction » mais « embarquer un
   interpréteur » (CPython-WASI, RustPython, componentize-py). Chapitre séparé, même
   contrat `Runtime`.
+- **Retry** : mise à jour en place de la ligne `runs` existante (voir §4), pas
+  de nouvelle ligne — décision prise pour rester à 3 tables. Si l'historique
+  par tentative devient nécessaire, extraire une table `attempts` sera le signe
+  qu'il faut réviser cette décision.
+- **LSP Go dans l'éditeur** : hors périmètre v1 (voir M8). Coloration syntaxique
+  seulement pour commencer ; gopls demande un vrai workspace Go, pas juste une
+  colonne de source, et n'apporte rien à l'apprentissage de Rust.
+- **Accès base : sync ou async** : `rusqlite` (synchrone) + `spawn_blocking`,
+  pas `sqlx`. Décision prise pour rester « bare minimum » — pas de pool de
+  connexions ni de macros de vérification de requêtes pour un process
+  mono-écrivain sur un seul fichier.
+- **« Monitored » (§ brief initial)** : compris ici comme « historisé et
+  interrogeable via la table `runs` + logs `tracing` », pas comme un export de
+  métriques temps réel (pas de `/metrics` Prometheus en v1). À rouvrir si le
+  besoin réel est de la supervision externe plutôt que de la consultation
+  d'historique dans l'UI.
+- **Déclencheur « on event »** : pour l'instant, un seul déclencheur d'événement
+  externe existe (`webhook`). Le chaînage de jobs (déclencher B quand A termine)
+  n'est **pas** modélisé — le dispatcher est sans état et ne connaît aucune
+  notion de dépendance entre fonctions. À trancher explicitement si un vrai
+  besoin de chaînage apparaît ; ce serait un 4ᵉ `kind` de trigger et une
+  refonte du dispatcher, pas un ajout mineur.
 
 ---
 

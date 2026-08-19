@@ -1,41 +1,37 @@
+use axum::extract::State;
 use axum::Router;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-use crate::features::container::Language;
-use crate::tools::http::{AppError, AppJson, Resp, Success};
+use super::{service, Container};
+use crate::tools::http::{AppJson, Resp, Success};
 use crate::AppState;
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/create", axum::routing::post(create))
+    Router::new()
+        .route("/", axum::routing::get(find_all))
+        .route("/create", axum::routing::post(create))
 }
 
 #[derive(Deserialize)]
 pub struct CreateContainer {
     name: String,
     language: String,
+    source: String,
 }
 
-#[derive(Serialize)]
-pub struct CreateContainerResp {
-    name: String,
-    language: String,
-}
-
-async fn create(AppJson(payload): AppJson<CreateContainer>) -> Resp<CreateContainerResp> {
+async fn create(
+    State(state): State<AppState>,
+    AppJson(payload): AppJson<CreateContainer>,
+) -> Resp<Container> {
     tracing::info!(name = %payload.name, "create container");
-    let language = Language::parse(&payload.language)?;
+    let container = service::create(&state, payload.name, payload.language, payload.source).await?;
+    Ok(Success::created(container))
+}
 
-    if payload.name.trim().is_empty() {
-        return Err(AppError::Validation("name must not be empty".to_owned()));
-    }
-
-    Ok(Success::created(CreateContainerResp {
-        name: payload.name,
-        language: language.as_str().to_owned(),
-    }))
+async fn find_all(State(state): State<AppState>) -> Resp<Vec<Container>> {
+    Ok(Success::ok(service::find_all(&state).await?))
 }
 
 async fn update() {}
-async fn find_all() {}
 async fn find_one() {}
 async fn delete() {}

@@ -7,7 +7,7 @@ edition = "2024"
 axum = "0.8.9"
 http = "1.5.0"
 serde = { version = "1.0.229", features = ["derive"] }
-tokio = { version = "1.53.1", features = ["rt", "rt-multi-thread", "macros", "signal"] }
+tokio = { version = "1.53.1", features = ["rt", "rt-multi-thread", "macros", "signal", "process", "sync"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 tracing-appender = "0.2.3"
 anyhow = "1.0.104"
@@ -16,3 +16,7 @@ serde_json = "1.0.151"
 thiserror = "2.0.17"
 tracing = "0.1.41"
 uuid = { version = "1.11.0", features = ["v7"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+chrono = { version = "0.4.45", features = ["serde"] }
+wasmtime = "47.0.3"
+wasmtime-wasi = "47.0.3"

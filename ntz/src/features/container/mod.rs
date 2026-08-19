@@ -5,6 +5,11 @@
  */
 
 pub mod handler;
+pub mod repo;
+pub mod service;
+
+use chrono::{DateTime, Utc};
+use serde::Serialize;
 
 /// Failures this feature can produce. Knows nothing about HTTP — the scheduler
 /// and the CLI will consume these too, and neither has a response to write.
@@ -41,8 +46,19 @@ impl Language {
     }
 }
 
-#[allow(dead_code)] // wired up once the store lands
+impl Serialize for Language {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct Container {
+    pub id: String,
     pub name: String,
     pub language: Language,
+    pub source: String,
+    pub version: i64,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }

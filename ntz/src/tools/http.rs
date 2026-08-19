@@ -8,6 +8,7 @@ use serde::Serialize;
 use std::borrow::Cow;
 use std::fmt::Write as _;
 
+use crate::db::DbError;
 use crate::features::container::ContainerError;
 
 /// Successful handler output: a status code plus a serializable body.
@@ -59,6 +60,9 @@ pub enum AppError {
     #[error("invalid request: {0}")]
     Validation(String),
 
+    #[error(transparent)]
+    Db(#[from] DbError),
+
     #[error("internal invariant broken: {0}")]
     Internal(Cow<'static, str>),
 }
@@ -97,6 +101,7 @@ impl IntoResponse for AppError {
                 }
             },
             AppError::Validation(_) => (StatusCode::BAD_REQUEST, "INVALID_REQUEST"),
+            AppError::Db(_) => (StatusCode::INTERNAL_SERVER_ERROR, "DB_ERROR"),
             AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL"),
         };
 
