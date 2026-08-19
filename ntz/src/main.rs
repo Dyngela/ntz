@@ -1,6 +1,7 @@
 pub mod config;
 pub mod db;
 pub mod features;
+pub mod scheduler;
 pub mod tools;
 pub mod toolchain;
 pub mod wasmhost;
@@ -14,12 +15,14 @@ use tower_http::cors::CorsLayer;
 use config::Config;
 use db::Db;
 use toolchain::Toolchain;
+use wasmhost::WasmHost;
 
 #[derive(Clone)]
 pub struct AppState {
     pub db: Arc<Db>,
     pub config: Arc<Config>,
     pub toolchain: Arc<Toolchain>,
+    pub wasmhost: Arc<WasmHost>,
 }
 
 #[tokio::main]
@@ -31,17 +34,26 @@ async fn main() -> anyhow::Result<()> {
     // Each feature owns and applies its own table(s) — the db module only
     // hands out the connection.
     features::container::repo::migrate(&db)?;
+    features::trigger::repo::migrate(&db)?;
+    features::run::repo::migrate(&db)?;
     let port = config.port;
     let toolchain = Toolchain::new(config.toolchain_dir.clone());
     let state = AppState {
         db: Arc::new(db),
         config: Arc::new(config),
         toolchain: Arc::new(toolchain),
+        wasmhost: Arc::new(WasmHost::new()?),
     };
+
+    // Runs for the lifetime of the process alongside the HTTP server, not
+    // awaited here — see `scheduler` module.
+    scheduler::spawn(state.clone());
 
     let app = Router::new()
         .route("/health", axum::routing::get(|| async { "ok" }))
         .nest("/containers", features::container::handler::router())
+        .nest("/triggers", features::trigger::handler::router())
+        .nest("/hooks", features::trigger::handler::webhook_router())
         .layer(
             CorsLayer::new()
                 .allow_origin("*".parse::<HeaderValue>()?)

@@ -20,3 +20,4 @@ rusqlite = { version = "0.40.2", features = ["bundled"] }
 chrono = { version = "0.4.45", features = ["serde"] }
 wasmtime = "47.0.3"
 wasmtime-wasi = "47.0.3"
+croner = "3.0.1"

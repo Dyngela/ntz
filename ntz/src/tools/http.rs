@@ -10,6 +10,7 @@ use std::fmt::Write as _;
 
 use crate::db::DbError;
 use crate::features::container::ContainerError;
+use crate::features::trigger::TriggerError;
 
 /// Successful handler output: a status code plus a serializable body.
 ///
@@ -57,6 +58,9 @@ pub enum AppError {
     #[error(transparent)]
     Container(#[from] ContainerError),
 
+    #[error(transparent)]
+    Trigger(#[from] TriggerError),
+
     #[error("invalid request: {0}")]
     Validation(String),
 
@@ -99,6 +103,19 @@ impl IntoResponse for AppError {
                 ContainerError::UnsupportedLanguage(_) => {
                     (StatusCode::UNPROCESSABLE_ENTITY, "UNSUPPORTED_LANGUAGE")
                 }
+                // The source didn't compile — that's the client's Go code,
+                // not our fault, hence 422 rather than a 500.
+                ContainerError::BuildFailed(_) => {
+                    (StatusCode::UNPROCESSABLE_ENTITY, "BUILD_FAILED")
+                }
+                // Exists, but nothing to run yet — the client needs to call
+                // build first. Not the client's malformed input (400) and
+                // not our fault (500), hence 409.
+                ContainerError::NotBuilt(_) => (StatusCode::CONFLICT, "CONTAINER_NOT_BUILT"),
+            },
+            AppError::Trigger(err) => match err {
+                TriggerError::WebhookNotFound(_) => (StatusCode::NOT_FOUND, "WEBHOOK_NOT_FOUND"),
+                TriggerError::PathTaken(_) => (StatusCode::CONFLICT, "WEBHOOK_PATH_TAKEN"),
             },
             AppError::Validation(_) => (StatusCode::BAD_REQUEST, "INVALID_REQUEST"),
             AppError::Db(_) => (StatusCode::INTERNAL_SERVER_ERROR, "DB_ERROR"),

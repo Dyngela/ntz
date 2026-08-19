@@ -38,6 +38,7 @@ ntz/*.db
 ntz/*.db-journal
 ntz/*.db-wal
 ntz/*.db-shm
+ntz/artifacts/
 
 # ─── IDE ─────────────────────────────────────────────────────────────────────
 /.idea

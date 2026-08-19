@@ -5,7 +5,17 @@ pub struct Config {
     pub port: u16,
     pub db_path: PathBuf,
     pub max_source_bytes: usize,
+    pub max_invoke_bytes: usize,
     pub toolchain_dir: PathBuf,
+    pub artifacts_dir: PathBuf,
+    pub scheduler_tick_seconds: u64,
+    pub max_concurrent_runs: usize,
+    pub run_lease_minutes: i64,
+    /// `catch_up: backfill` safety cap — how many missed slots a single
+    /// trigger will replay in one go before giving up and jumping to "now".
+    /// Without this, a trigger that ran a fine-grained cron and was down for
+    /// a long time could try to replay thousands of slots in one tick.
+    pub max_backfill_slots: usize,
 }
 
 impl Config {
@@ -16,9 +26,17 @@ impl Config {
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| PathBuf::from("ntz.db")),
             max_source_bytes: env_parsed("NTZ_MAX_SOURCE_BYTES").unwrap_or(256 * 1024),
+            max_invoke_bytes: env_parsed("NTZ_MAX_INVOKE_BYTES").unwrap_or(1024 * 1024),
             toolchain_dir: std::env::var("NTZ_TOOLCHAIN_DIR")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| default_toolchain_dir()),
+            artifacts_dir: std::env::var("NTZ_ARTIFACTS_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("artifacts")),
+            scheduler_tick_seconds: env_parsed("NTZ_SCHEDULER_TICK_SECONDS").unwrap_or(30),
+            max_concurrent_runs: env_parsed("NTZ_MAX_CONCURRENT_RUNS").unwrap_or(4),
+            run_lease_minutes: env_parsed("NTZ_RUN_LEASE_MINUTES").unwrap_or(10),
+            max_backfill_slots: env_parsed("NTZ_MAX_BACKFILL_SLOTS").unwrap_or(20),
         }
     }
 }

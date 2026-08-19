@@ -15,15 +15,16 @@ pub struct WasmHost {
 pub struct WasmOutcome {
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
+    /// A non-zero exit is a normal outcome the callee reported on purpose
+    /// (e.g. Go's `os.Exit(1)`) — not a host-level failure. Only a genuine
+    /// trap or setup error becomes `Err`.
+    pub exit_code: i32,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum WasmHostError {
     #[error("wasm setup or trap error: {0}")]
     Wasmtime(#[from] wasmtime::Error),
-
-    #[error("wasm exited with non-zero status {0}")]
-    NonZeroExit(i32),
 }
 
 impl WasmHost {
@@ -55,19 +56,19 @@ impl WasmHost {
 
         // A WASI command "returns" by trapping into `proc_exit` — even on
         // success. `I32Exit` carries the real exit code; anything else
-        // downcast fails on is a genuine crash/trap.
-        match start.call(&mut store, ()) {
-            Ok(()) => {}
+        // downcast fails on is a genuine crash/trap, not a reported exit.
+        let exit_code = match start.call(&mut store, ()) {
+            Ok(()) => 0,
             Err(err) => match err.downcast::<I32Exit>() {
-                Ok(I32Exit(0)) => {}
-                Ok(I32Exit(code)) => return Err(WasmHostError::NonZeroExit(code)),
+                Ok(I32Exit(code)) => code,
                 Err(err) => return Err(WasmHostError::Wasmtime(err)),
             },
-        }
+        };
 
         Ok(WasmOutcome {
             stdout: stdout_pipe.contents().to_vec(),
             stderr: stderr_pipe.contents().to_vec(),
+            exit_code,
         })
     }
 }
@@ -85,5 +86,6 @@ mod tests {
 
         assert_eq!(outcome.stdout, b"echo: world");
         assert!(outcome.stderr.is_empty());
+        assert_eq!(outcome.exit_code, 0);
     }
 }
