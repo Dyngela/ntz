@@ -1,0 +1,12 @@
+[workspace]
+resolver = "3"
+members = ["ntz-core", "ntz-analyzer", "ntz-gui", "ntz-entrypoint"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+ntz-core = { path = "ntz-core" }
+ntz-analyzer = { path = "ntz-analyzer" }
+ntz-gui = { path = "ntz-gui" }

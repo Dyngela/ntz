@@ -1,0 +1,7 @@
+[package]
+name = "ntz-analyzer"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ntz-core.workspace = true

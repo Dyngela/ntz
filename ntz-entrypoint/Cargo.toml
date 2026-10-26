@@ -1,0 +1,11 @@
+[package]
+name = "ntz-entrypoint"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ntz-gui.workspace = true
+
+[[bin]]
+name = "ntz"
+path = "src/main.rs"
